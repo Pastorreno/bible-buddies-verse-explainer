@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bible Buddies &mdash; Verse Explainer</title>
+<style>
+  :root { --charcoal:#1c1c1e; --gold:#c9a227; --white:#ffffff; --muted:#9a9a9e; --card:#262628; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--charcoal); color:var(--white); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; line-height:1.55; padding:24px 16px 48px; }
+  .wrap { max-width:640px; margin:0 auto; }
+  h1 { font-size:26px; line-height:1.25; }
+  h1 span { color:var(--gold); }
+  .sub { color:var(--muted); margin:8px 0 24px; font-size:15px; }
+  .row { display:flex; gap:8px; }
+  input[type=text] { flex:1; padding:13px 14px; font-size:17px; border:1px solid #3a3a3d; border-radius:10px; background:#2c2c2e; color:#fff; outline:none; }
+  input[type=text]:focus { border-color:var(--gold); }
+  button.go { padding:13px 20px; font-size:17px; font-weight:700; border:none; border-radius:10px; background:var(--gold); color:#1c1c1e; cursor:pointer; }
+  button.go:disabled { opacity:.55; cursor:default; }
+  .picker { margin:12px 0 4px; font-size:14px; color:var(--muted); }
+  .picker label { margin-right:14px; cursor:pointer; color:#d7d7d9; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+  .chip { padding:7px 12px; font-size:14px; border:1px solid #3a3a3d; border-radius:999px; background:transparent; color:#e8e8ea; cursor:pointer; }
+  .chip:hover { border-color:var(--gold); color:var(--gold); }
+  #status { min-height:22px; margin:18px 0 0; color:var(--muted); font-size:15px; }
+  #result { display:none; margin-top:18px; }
+  .verse-card { background:var(--card); border-left:4px solid var(--gold); border-radius:10px; padding:18px; }
+  .verse-ref { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); font-weight:700; }
+  .verse-text { font-size:19px; margin-top:8px; }
+  .verse-trans { font-size:13px; color:var(--muted); margin-top:8px; }
+  .section { background:var(--card); border-radius:10px; padding:18px; margin-top:12px; }
+  .section h2 { font-size:15px; color:var(--gold); margin-bottom:6px; }
+  .section p { font-size:16px; }
+  .takeaway { border:1px solid var(--gold); }
+  .foot { margin-top:28px; font-size:13px; color:var(--muted); }
+  .foot a { color:var(--gold); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bible Buddies <span>Verse Explainer</span></h1>
+  <p class="sub">Type a verse. Get it in plain words: who wrote it, who it was written to, why, and what it means.</p>
+
+  <div class="row">
+    <input id="ref" type="text" placeholder="Romans 9:22" autocomplete="off" enterkeyhint="go">
+    <button class="go" id="go" type="button">Explain it</button>
+  </div>
+
+  <div class="picker">
+    Translation:
+    <label><input type="radio" name="tr" value="nlt" checked> NLT</label>
+    <label><input type="radio" name="tr" value="kjv"> KJV</label>
+    <label><input type="radio" name="tr" value="web"> WEB</label>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div id="status"></div>
+  <div id="result"></div>
+
+  <p class="foot">Verse text is pulled live and shown with its translation, so you always know what was actually quoted. NLT text via Tyndale's NLT API. Built on <a href="https://bible-buddies-v2.vercel.app/">Bible Buddies</a>.</p>
+</div>
+
+<script>
+const examples = ["Romans 9:22", "Proverbs 3:5-6", "Joshua 1:9", "Ephesians 3:20-21", "Galatians 6:9", "Romans 8:28"];
+const chipsEl = document.getElementById("chips");
+examples.forEach(function (r) {
+  const b = document.createElement("button");
+  b.className = "chip"; b.type = "button"; b.textContent = r;
+  b.onclick = function () { document.getElementById("ref").value = r; explain(); };
+  chipsEl.appendChild(b);
+});
+
+const refEl = document.getElementById("ref");
+const goBtn = document.getElementById("go");
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+function explain() {
+  const ref = refEl.value.trim();
+  if (!ref) { statusEl.textContent = "Type a verse first, like Romans 9:22."; return; }
+  const tr = (document.querySelector('input[name="tr"]:checked') || {}).value || "nlt";
+  goBtn.disabled = true;
+  statusEl.textContent = "Looking it up and explaining it...";
+  resultEl.style.display = "none";
+  resultEl.innerHTML = "";
+  fetch("/api/explain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reference: ref, translation: tr })
+  })
+  .then(function (res) { return res.json().then(function (j) { return { ok: res.ok, j: j }; }); })
+  .then(function (out) {
+    goBtn.disabled = false;
+    if (!out.ok) { statusEl.textContent = out.j.error || "Something went wrong. Try again."; return; }
+    const d = out.j;
+    const e = d.explanation || {};
+    statusEl.textContent = "";
+    resultEl.innerHTML =
+      '<div class="verse-card"><div class="verse-ref">' + esc(d.reference) + '</div>' +
+      '<div class="verse-text">&ldquo;' + esc(d.verseText) + '&rdquo;</div>' +
+      '<div class="verse-trans">' + esc(d.translationName || d.translation) + '</div></div>' +
+      section("Who wrote it", e.whoWroteIt) +
+      section("Who it was written to", e.whoItWasWrittenTo) +
+      section("Why it was written", e.whyItWasWritten) +
+      section("What it means in plain words", e.whatItMeans) +
+      '<div class="section takeaway"><h2>In one line</h2><p>' + esc(e.oneLine) + '</p></div>';
+    resultEl.style.display = "block";
+    resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  })
+  .catch(function () {
+    goBtn.disabled = false;
+    statusEl.textContent = "Could not reach the explainer. Check your connection and try again.";
+  });
+}
+
+function section(title, body) {
+  if (!body) return "";
+  return '<div class="section"><h2>' + esc(title) + '</h2><p>' + esc(body) + '</p></div>';
+}
+
+goBtn.addEventListener("click", explain);
+refEl.addEventListener("keydown", function (ev) { if (ev.key === "Enter") explain(); });
+</script>
+</body>
+</html>
